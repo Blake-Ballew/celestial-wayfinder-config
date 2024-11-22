@@ -30,6 +30,7 @@ var BroadcastedTcpChannels []TcpChannel
 var activeTcpConnection *net.TCPConn = nil
 
 var SerialChannels []string
+var activeSerialPort string = ""
 
 func FindTcpChannels(timeoutMs int) {
 	pc, err := net.ListenPacket("udp", ":"+fmt.Sprint(RPC_BROADCAST_PORT))
@@ -43,10 +44,13 @@ func FindTcpChannels(timeoutMs int) {
 
 	for {
 		if time.Since(start).Milliseconds() > int64(timeoutMs) {
+			fmt.Println()
 			break
 		}
 
-		pc.SetDeadline(time.Now().Add(time.Millisecond * time.Duration(10)))
+		fmt.Print(".")
+
+		pc.SetDeadline(time.Now().Add(time.Millisecond * time.Duration(100)))
 		buffer := make([]byte, 1024)
 		numBytes, _, err := pc.ReadFrom(buffer)
 
@@ -55,6 +59,7 @@ func FindTcpChannels(timeoutMs int) {
 		}
 
 		if err != nil {
+			fmt.Println()
 			fmt.Println("Error reading from broadcast:", err)
 			return
 		}
@@ -101,4 +106,9 @@ func RefreshSerialChannels() {
 		fmt.Println(err)
 	}
 	SerialChannels = channels
+}
+
+func SelectSerialPort(port string) {
+	activeSerialPort = port
+	CurrentRpcChannel = RPC_CHANNEL_SERIAL
 }
