@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/nexidian/gocliselect"
 	"github.com/vmihailenco/msgpack/v5"
 	"go.bug.st/serial"
 )
+
+var menuStack *MenuStack
 
 func main() {
 	fmt.Println("Hello, World!")
@@ -24,8 +25,13 @@ func main() {
 		}
 	}
 
-	if len(os.Args) < 2 || os.Args[1] == "help" {
+	if len(os.Args) < 2 {
 		interactiveMode()
+		return
+	}
+
+	if os.Args[1] == "help" {
+		printUsage()
 		return
 	}
 
@@ -36,17 +42,54 @@ func printUsage() {
 }
 
 func interactiveMode() {
-	menu := gocliselect.NewMenu("Celestial Wayfinder Utils")
 
-	menu.AddItem("RPC", "rpc")
-	menu.AddItem("Quit", "quit")
-
-	choice := menu.Display()
-
-	switch choice {
-	case "rpc":
-		// rpcMode()
-	case "quit":
+	// Return if platform is Windows
+	if os.Getenv("GOOS") == "windows" {
+		fmt.Println("Interactive mode is not supported on Windows")
 		os.Exit(0)
 	}
+
+	menuStack = NewMenuStack()
+
+	homePage := NewMenuPage("Celestial Wayfinder Configuration")
+
+	homePage.
+		AssignMenuSelection("rpc-channel", "Select RPC Channel", func(key string) (int, error) {
+			return WINDOW_SELECT, nil
+		}).
+		AssignAdjacentMenu("rpc-channel", NewRpcChannelMenu).
+		AssignMenuSelection("quit", "Quit", func(key string) (int, error) {
+			os.Exit(0)
+			return 0, nil
+		})
+
+	menuStack.Push(homePage)
+
+	for {
+		menu := menuStack.MenuPageStack.Front()
+		if menu == nil {
+			os.Exit(0)
+		}
+
+		if menu.Value.(*MenuPage).OnDisplay != nil {
+			menu.Value.(*MenuPage).OnDisplay(menu.Value.(*MenuPage))
+		}
+		choice := menu.Value.(*MenuPage).MenuObject.Display()
+		selectionObj := menu.Value.(*MenuPage).SelectionMap[choice]
+
+		result, err := selectionObj.ExecuteMenuSelection(choice)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		if result > 0 {
+			switch result {
+			case WINDOW_BACK:
+				menuStack.Pop()
+			case WINDOW_SELECT:
+				menuStack.Push(menu.Value.(*MenuPage).AdjacentMenu[choice]())
+			}
+		}
+	}
+
 }
