@@ -7,9 +7,9 @@ import (
 
 func NewRpcChannelMenu() *MenuPage {
 	RpcChannelMenu := NewMenuPage("Select RPC Channel")
-	RpcChannelMenu.AssignMenuSelection("serial", "Serial", func(key string) (int, error) {
+	RpcChannelMenu.AssignMenuSelection("tcp", "TCP", func(key string) (int, error) {
 		return WINDOW_SELECT, nil
-	}).AssignMenuSelection("tcp", "TCP", func(key string) (int, error) {
+	}).AssignMenuSelection("serial", "Serial", func(key string) (int, error) {
 		return WINDOW_SELECT, nil
 	}).AssignMenuSelection("back", "Back", func(key string) (int, error) {
 		return WINDOW_BACK, nil

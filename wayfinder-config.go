@@ -4,15 +4,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vmihailenco/msgpack/v5"
 	"go.bug.st/serial"
 )
 
 var menuStack *MenuStack
 
 func main() {
-	fmt.Println("Hello, World!")
-	fmt.Println("msgpack version:", msgpack.Version())
 	ports, err := serial.GetPortsList()
 	if err != nil {
 		fmt.Println(err)
@@ -53,15 +50,24 @@ func interactiveMode() {
 
 	homePage := NewMenuPage("Celestial Wayfinder Configuration")
 
-	homePage.
-		AssignMenuSelection("rpc-channel", "Select RPC Channel", func(key string) (int, error) {
-			return WINDOW_SELECT, nil
-		}).
-		AssignAdjacentMenu("rpc-channel", NewRpcChannelMenu).
-		AssignMenuSelection("quit", "Quit", func(key string) (int, error) {
+	homePage.OnDisplay = func(thisPage *MenuPage) {
+		thisPage.ClearMenuSelections().
+			AssignMenuSelection("rpc-channel", "Select RPC Channel", func(key string) (int, error) {
+				return WINDOW_SELECT, nil
+			}).AssignAdjacentMenu("rpc-channel", NewRpcChannelMenu)
+
+		if CurrentRpcChannel != nil {
+			thisPage.AssignMenuSelection("rpc-functions", "RPC Functions", func(key string) (int, error) {
+				return WINDOW_SELECT, nil
+			}).AssignAdjacentMenu("rpc-functions", GenerateRpcFunctionsMenu)
+		}
+
+		thisPage.AssignMenuSelection("quit", "Quit", func(key string) (int, error) {
 			os.Exit(0)
 			return 0, nil
 		})
+
+	}
 
 	menuStack.Push(homePage)
 
@@ -87,7 +93,9 @@ func interactiveMode() {
 			case WINDOW_BACK:
 				menuStack.Pop()
 			case WINDOW_SELECT:
-				menuStack.Push(menu.Value.(*MenuPage).AdjacentMenu[choice]())
+				if menu.Value.(*MenuPage).AdjacentMenu[choice] != nil {
+					menuStack.Push(menu.Value.(*MenuPage).AdjacentMenu[choice]())
+				}
 			}
 		}
 	}
