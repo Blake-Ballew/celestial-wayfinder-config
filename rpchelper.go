@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -70,6 +74,8 @@ func (c *TcpChannel) CallRpcChannel(rpcData map[string]interface{}) (map[string]
 		return nil, err
 	}
 
+	c.connection.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
 	_, err = c.connection.Write(data)
 	if err != nil {
 		return nil, err
@@ -77,30 +83,75 @@ func (c *TcpChannel) CallRpcChannel(rpcData map[string]interface{}) (map[string]
 
 	buffer := make([]byte, 1024)
 	timeoutMs := 3000
+	startTime := time.Now()
+	bytesReceived := 0
 
-	c.connection.SetDeadline(time.Now().Add(time.Millisecond * time.Duration(timeoutMs)))
-	numBytes, err := c.connection.Read(buffer)
-	if err != nil {
-		return nil, err
+	// Wait for bytes and attempt to decode the message pack
+	for time.Since(startTime) < time.Millisecond*time.Duration(timeoutMs) {
+		// Set deadline to loop time remaining
+		timeRemaining := int64(timeoutMs) - time.Since(startTime).Milliseconds()
+		c.connection.SetDeadline(time.Now().Add(time.Millisecond * time.Duration(timeRemaining)))
+
+		numBytes, err := c.connection.Read(buffer[bytesReceived:])
+		if err != nil {
+			return nil, err
+		}
+
+		bytesReceived += numBytes
+
+		// if numBytes == 0 {
+		// 	return nil, fmt.Errorf("tcp response was empty")
+		// }
+
+		// fmt.Printf("Received %d bytes\n", numBytes)
+
+		// Print bytes
+		// for i := 0; i < bytesReceived; i++ {
+		// 	fmt.Printf("%02x ", buffer[i])
+		// }
+		// fmt.Println()
+
+		response := make(map[string]interface{})
+		err = msgpack.Unmarshal(buffer[:bytesReceived], &response)
+		if err != nil {
+			continue
+		}
+
+		return response, nil
 	}
 
-	if numBytes == 0 {
-		return nil, fmt.Errorf("no response from tcp channel")
-	}
+	return nil, fmt.Errorf("timed out waiting for tcp response")
 
-	response := make(map[string]interface{})
-	err = msgpack.Unmarshal(buffer[:numBytes], &response)
-	if err != nil {
-		return nil, err
-	}
+	// c.connection.SetDeadline(time.Now().Add(time.Millisecond * time.Duration(timeoutMs)))
+	// numBytes, err := c.connection.Read(buffer)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	return response, nil
+	// if numBytes == 0 {
+	// 	return nil, fmt.Errorf("no response from tcp channel")
+	// }
+
+	// // Print bytes
+	// for i := 0; i < numBytes; i++ {
+	// 	fmt.Printf("%02x ", buffer[i])
+	// }
+	// fmt.Println()
+
+	// response := make(map[string]interface{})
+	// err = msgpack.Unmarshal(buffer[:numBytes], &response)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// return response, nil
 }
 
 func (c *TcpChannel) Open() error {
 	connection, err := net.DialTCP("tcp4", &net.TCPAddr{
-		IP:   net.ParseIP("0.0.0.0"),
-		Port: c.connectionInfo.Port,
+		IP: net.ParseIP("0.0.0.0"),
+		// Port: c.connectionInfo.Port,
+		Port: 0,
 	}, &net.TCPAddr{
 		IP:   net.ParseIP(c.connectionInfo.IpAddress),
 		Port: c.connectionInfo.Port,
@@ -115,6 +166,10 @@ func (c *TcpChannel) Open() error {
 
 func (c *TcpChannel) Close() {
 	if c.connection != nil {
+		connFile, _ := c.connection.File()
+		if connFile != nil {
+			connFile.Close()
+		}
 		c.connection.Close()
 	}
 }
@@ -236,7 +291,7 @@ func SelectSerialPort(port string) {
 
 func GenerateRpcFunctionsMenu() *MenuPage {
 	functionMenu := NewMenuPage("RPC Functions").
-		AssignMenuSelection("exec-json-file", "Execute JSON File", func(key string) (int, error) {
+		AssignMenuSelection("exec-json-file", "Send Hello World", func(key string) (int, error) {
 
 			// prompt user for file name
 			// reader := bufio.NewReader(os.Stdin)
@@ -269,7 +324,80 @@ func GenerateRpcFunctionsMenu() *MenuPage {
 			fmt.Println()
 
 			return 0, nil
-		}).AssignMenuSelection("back", "Back", func(key string) (int, error) {
+		}).AssignMenuSelection("delete-message", "Delete Messages", func(key string) (int, error) {
+		messagePacket, err := GetSavedMessages()
+		if err != nil {
+			fmt.Println("Error getting saved messages:", err)
+			return 0, err
+		}
+
+		maxIdx := 0
+
+		if messages, ok := messagePacket["messages"]; ok {
+			if messagesSlice, ok := messages.([]interface{}); ok {
+				maxIdx = len(messagesSlice) - 1
+				for idx, message := range messagesSlice {
+					if messageStr, ok := message.(string); ok {
+						fmt.Println(idx, ": ", messageStr)
+					}
+				}
+
+				fmt.Print("Enter message index to delete: ")
+				reader := bufio.NewReader(os.Stdin)
+				key, err := reader.ReadString('\n')
+				if err != nil {
+					return 0, err
+				}
+
+				key = strings.TrimSpace(key)
+				if key == "" {
+					return 0, nil
+				}
+
+				idx, err := strconv.Atoi(key)
+				if err != nil {
+					return 0, err
+				}
+
+				if idx < 0 || idx > maxIdx {
+					fmt.Println("Invalid index")
+					return 0, nil
+				}
+
+				_, err = DeleteSavedMessage(idx)
+				if err != nil {
+					return 0, err
+				}
+			}
+		}
+
+		return 0, nil
+	}).AssignMenuSelection("add-message", "Add Message", func(key string) (int, error) {
+		fmt.Print("Enter message: ")
+		reader := bufio.NewReader(os.Stdin)
+		message, err := reader.ReadString('\n')
+		if err != nil {
+			return 0, err
+		}
+
+		result, err := AddSavedMessage(message)
+		if err != nil {
+			return 0, err
+		}
+
+		jsonData, err := json.Marshal(result)
+		if err != nil {
+			return 0, err
+		}
+
+		fmt.Println()
+		fmt.Println("Result:")
+		fmt.Println(string(jsonData))
+		fmt.Println()
+
+		return 0, nil
+
+	}).AssignMenuSelection("back", "Back", func(key string) (int, error) {
 		return WINDOW_BACK, nil
 	})
 

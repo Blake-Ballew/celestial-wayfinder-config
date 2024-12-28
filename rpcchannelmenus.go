@@ -27,7 +27,7 @@ func NewTcpConnectionMenu() *MenuPage {
 		menupg.ClearMenuSelections()
 
 		menupg.AssignMenuSelection("refresh", "Refresh", func(key string) (int, error) {
-			FindTcpChannels(5000)
+			FindTcpChannels(1000)
 			return 0, nil
 		})
 

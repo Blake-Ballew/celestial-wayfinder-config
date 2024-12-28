@@ -63,6 +63,9 @@ func interactiveMode() {
 		}
 
 		thisPage.AssignMenuSelection("quit", "Quit", func(key string) (int, error) {
+			if CurrentRpcChannel != nil {
+				CurrentRpcChannel.Close()
+			}
 			os.Exit(0)
 			return 0, nil
 		})
